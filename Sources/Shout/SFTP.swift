@@ -5,23 +5,21 @@
 //  Created by Vladislav Alexeev on 6/20/18.
 //
 
-import Foundation
 import CSSH
+import Foundation
 
 /// Manages an SFTP session
 public class SFTP {
-    
     /// Direct bindings to libssh2_sftp
     private class SFTPHandle {
-        
         // Recommended buffer size accordingly to the docs:
         // https://www.libssh2.org/libssh2_sftp_write.html
         fileprivate static let bufferSize = 32768
-        
+
         private let cSession: OpaquePointer
         private let sftpHandle: OpaquePointer
         private var buffer = [Int8](repeating: 0, count: SFTPHandle.bufferSize)
-        
+
         init(cSession: OpaquePointer, sftpSession: OpaquePointer, remotePath: String, flags: Int32, mode: Int32, openType: Int32 = LIBSSH2_SFTP_OPENFILE) throws {
             guard let sftpHandle = libssh2_sftp_open_ex(
                 sftpSession,
@@ -29,18 +27,19 @@ public class SFTP {
                 UInt32(remotePath.count),
                 UInt(flags),
                 Int(mode),
-                openType) else {
-                    throw SSHError.mostRecentError(session: cSession, backupMessage: "libssh2_sftp_open_ex failed")
+                openType
+            ) else {
+                throw SSHError.mostRecentError(session: cSession, backupMessage: "libssh2_sftp_open_ex failed")
             }
             self.cSession = cSession
             self.sftpHandle = sftpHandle
         }
-        
+
         func read() -> ReadWriteProcessor.ReadResult {
             let result = libssh2_sftp_read(sftpHandle, &buffer, SFTPHandle.bufferSize)
             return ReadWriteProcessor.processRead(result: result, buffer: &buffer, session: cSession)
         }
-        
+
         func write(_ data: Data) -> ReadWriteProcessor.WriteResult {
             let result: Result<Int, SSHError> = data.withUnsafeBytes {
                 guard let unsafePointer = $0.bindMemory(to: Int8.self).baseAddress else {
@@ -55,7 +54,7 @@ public class SFTP {
                 return ReadWriteProcessor.processWrite(result: value, session: cSession)
             }
         }
-        
+
         func readDir(_ attrs: inout LIBSSH2_SFTP_ATTRIBUTES) -> ReadWriteProcessor.ReadResult {
             let result = libssh2_sftp_readdir_ex(sftpHandle, &buffer, SFTPHandle.bufferSize, nil, 0, &attrs)
             return ReadWriteProcessor.processRead(result: Int(result), buffer: &buffer, session: cSession)
@@ -64,15 +63,14 @@ public class SFTP {
         deinit {
             libssh2_sftp_close_handle(sftpHandle)
         }
-        
     }
-    
+
     private let cSession: OpaquePointer
     private let sftpSession: OpaquePointer
-    
+
     // Retain session to ensure it is not freed before the sftp session is closed
     private let session: Session
-        
+
     init(session: Session, cSession: OpaquePointer) throws {
         guard let sftpSession = libssh2_sftp_init(cSession) else {
             throw SSHError.mostRecentError(session: cSession, backupMessage: "libssh2_sftp_init failed")
@@ -96,12 +94,13 @@ public class SFTP {
             flags: LIBSSH2_FXF_READ,
             mode: 0
         )
-        
+
         guard FileManager.default.createFile(atPath: localURL.path, contents: nil, attributes: nil),
-            let fileHandle = try? FileHandle(forWritingTo: localURL) else {
+              let fileHandle = try? FileHandle(forWritingTo: localURL)
+        else {
             throw SSHError.genericError("couldn't create file at \(localURL.path)")
         }
-        
+
         defer { fileHandle.closeFile() }
 
         var dataLeft = true
@@ -118,7 +117,7 @@ public class SFTP {
             }
         }
     }
-    
+
     /// Upload a file from the local device to the remote server
     ///
     /// - Parameters:
@@ -130,7 +129,7 @@ public class SFTP {
         let data = try Data(contentsOf: localURL, options: .alwaysMapped)
         try upload(data: data, remotePath: remotePath, permissions: permissions, progress: progress)
     }
-    
+
     /// Upload data to a file on the remote server
     ///
     /// - Parameters:
@@ -144,7 +143,7 @@ public class SFTP {
         }
         try upload(data: data, remotePath: remotePath, permissions: permissions, progress: progress)
     }
-    
+
     /// Upload data to a file on the remote server
     ///
     /// - Parameters:
@@ -161,10 +160,9 @@ public class SFTP {
             flags: LIBSSH2_FXF_WRITE | LIBSSH2_FXF_CREAT,
             mode: LIBSSH2_SFTP_S_IFREG | permissions.rawValue
         )
-        
+
         var offset = 0
         while offset < data.count {
-
             // Format bytes.
             let byteFormatter = ByteCountFormatter()
             byteFormatter.allowedUnits = [.useMB]
@@ -172,7 +170,7 @@ public class SFTP {
 
             DispatchQueue.main.async {
                 // Update progress percentage.
-                progress.progress = Double(Double(offset) / Double(data.count) * 100)
+                progress.progress = Double(Double(offset) / Double(data.count))
 
                 // Update progress string.
                 progress.text = byteFormatter.string(fromByteCount: Int64(data.count))
@@ -193,7 +191,7 @@ public class SFTP {
             }
         }
     }
-    
+
     /// Create a folder on the remote server
     ///
     /// - Parameters:
@@ -201,11 +199,11 @@ public class SFTP {
     /// - Throws: SSHError if folder can't be created
     public func createDirectory(_ path: String) throws {
         let result = path.withCString { (pointer: UnsafePointer<Int8>) -> Int32 in
-            return libssh2_sftp_mkdir_ex(sftpSession, pointer, UInt32(strlen(pointer)), Int(LIBSSH2_SFTP_S_IRWXU | LIBSSH2_SFTP_S_IRGRP | LIBSSH2_SFTP_S_IXGRP | LIBSSH2_SFTP_S_IROTH | LIBSSH2_SFTP_S_IXOTH))
+            libssh2_sftp_mkdir_ex(sftpSession, pointer, UInt32(strlen(pointer)), Int(LIBSSH2_SFTP_S_IRWXU | LIBSSH2_SFTP_S_IRGRP | LIBSSH2_SFTP_S_IXGRP | LIBSSH2_SFTP_S_IROTH | LIBSSH2_SFTP_S_IXOTH))
         }
         try handleSFTPCommandResult(result)
     }
-    
+
     /// Rename a file on the remote server
     ///
     /// - Parameters:
@@ -214,17 +212,17 @@ public class SFTP {
     ///   - override: set to true, if rename should override if there is already a file on dest path
     /// - Throws: SSHError if file can't be renamed
     public func rename(src: String, dest: String, override: Bool) throws {
-        var flag: Int = Int(LIBSSH2_SFTP_RENAME_OVERWRITE)
+        var flag = Int(LIBSSH2_SFTP_RENAME_OVERWRITE)
         if !override { flag = 0 }
-        
+
         let result = src.withCString { (srcPointer: UnsafePointer<Int8>) -> Int32 in
-            return dest.withCString { (destPointer: UnsafePointer<Int8>) -> Int32 in
-                return libssh2_sftp_rename_ex(sftpSession, srcPointer, UInt32(strlen(srcPointer)), destPointer, UInt32(strlen(destPointer)), flag)
+            dest.withCString { (destPointer: UnsafePointer<Int8>) -> Int32 in
+                libssh2_sftp_rename_ex(sftpSession, srcPointer, UInt32(strlen(srcPointer)), destPointer, UInt32(strlen(destPointer)), flag)
             }
         }
         try handleSFTPCommandResult(result)
     }
-    
+
     /// Remove a file on the remote server
     ///
     /// - Parameters:
@@ -232,11 +230,11 @@ public class SFTP {
     /// - Throws: SSHError if file can't be deleted
     public func removeFile(_ path: String) throws {
         let result = path.withCString { (pointer: UnsafePointer<Int8>) -> Int32 in
-            return libssh2_sftp_unlink_ex(sftpSession, pointer, UInt32(strlen(pointer)))
+            libssh2_sftp_unlink_ex(sftpSession, pointer, UInt32(strlen(pointer)))
         }
         try handleSFTPCommandResult(result)
     }
-    
+
     /// Remove a folder on the remote server
     ///
     /// - Parameters:
@@ -244,25 +242,22 @@ public class SFTP {
     /// - Throws: SSHError if folder can't be deleted
     public func removeDirectory(_ path: String) throws {
         let result = path.withCString { (pointer: UnsafePointer<Int8>) -> Int32 in
-            return libssh2_sftp_rmdir_ex(sftpSession, pointer, UInt32(strlen(pointer)))
+            libssh2_sftp_rmdir_ex(sftpSession, pointer, UInt32(strlen(pointer)))
         }
         try handleSFTPCommandResult(result)
     }
-    
-    
-    
-    public func listFiles(in directory: String) throws -> [String : FileAttributes] {
-        
+
+    public func listFiles(in directory: String) throws -> [String: FileAttributes] {
         let sftpHandle = try SFTPHandle(
-                cSession: cSession,
-                sftpSession: sftpSession,
-                remotePath: directory,
-                flags: LIBSSH2_FXF_READ,
-                mode: 0,
-                openType: LIBSSH2_SFTP_OPENDIR
+            cSession: cSession,
+            sftpSession: sftpSession,
+            remotePath: directory,
+            flags: LIBSSH2_FXF_READ,
+            mode: 0,
+            openType: LIBSSH2_SFTP_OPENDIR
         )
 
-        var files = [String : FileAttributes]()
+        var files = [String: FileAttributes]()
         var attrs = LIBSSH2_SFTP_ATTRIBUTES()
 
         var dataLeft = true
@@ -283,12 +278,11 @@ public class SFTP {
         }
         return files
     }
-    
-    
+
     private func handleSFTPCommandResult(_ result: Int32) throws {
         let processedResult = ReadWriteProcessor.processWrite(result: Int(result), session: cSession)
         switch processedResult {
-        case .written( _):
+        case .written:
             break
         case .eagain:
             break
@@ -296,11 +290,8 @@ public class SFTP {
             throw error
         }
     }
-    
-    
-    
+
     deinit {
         libssh2_sftp_shutdown(sftpSession)
     }
-    
 }
