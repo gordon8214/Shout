@@ -172,7 +172,7 @@ public class SFTP {
 
             DispatchQueue.main.async {
                 // Update progress percentage.
-                progress.progress = Double(offset / data.count * 100)
+                progress.progress = Double(Double(offset) / Double(data.count) * 100)
 
                 // Update progress string.
                 progress.text = byteFormatter.string(fromByteCount: Int64(data.count))
