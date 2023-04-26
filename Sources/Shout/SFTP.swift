@@ -126,9 +126,9 @@ public class SFTP {
     ///   - remotePath: the location on the remote server whether the file should be uploaded to
     ///   - permissions: the file permissions to create the new file with; defaults to FilePermissions.default
     /// - Throws: SSHError if local file can't be read or upload fails
-    public func upload(localURL: URL, remotePath: String, permissions: FilePermissions = .default) throws {
+    public func upload(localURL: URL, remotePath: String, permissions: FilePermissions = .default, progress: UploadProgress) throws {
         let data = try Data(contentsOf: localURL, options: .alwaysMapped)
-        try upload(data: data, remotePath: remotePath, permissions: permissions)
+        try upload(data: data, remotePath: remotePath, permissions: permissions, progress: progress)
     }
     
     /// Upload data to a file on the remote server
@@ -138,11 +138,11 @@ public class SFTP {
     ///   - remotePath: the location on the remote server whether the file should be uploaded to
     ///   - permissions: the file permissions to create the new file with; defaults to FilePermissions.default
     /// - Throws: SSHError if string is not valid or upload fails
-    public func upload(string: String, remotePath: String, permissions: FilePermissions = .default) throws {
+    public func upload(string: String, remotePath: String, permissions: FilePermissions = .default, progress: UploadProgress) throws {
         guard let data = string.data(using: .utf8) else {
             throw SSHError.genericError("Unable to convert string to utf8 data")
         }
-        try upload(data: data, remotePath: remotePath, permissions: permissions)
+        try upload(data: data, remotePath: remotePath, permissions: permissions, progress: progress)
     }
     
     /// Upload data to a file on the remote server
@@ -151,8 +151,9 @@ public class SFTP {
     ///   - data: Data to be uploaded as a file
     ///   - remotePath: the location on the remote server whether the file should be uploaded to
     ///   - permissions: the file permissions to create the new file with; defaults to FilePermissions.default
+    ///   - progress: An `UploadProgress` object to track the progress of the upload.
     /// - Throws: SSHError if upload fails
-    public func upload(data: Data, remotePath: String, permissions: FilePermissions = .default) throws {
+    public func upload(data: Data, remotePath: String, permissions: FilePermissions = .default, progress: UploadProgress) throws {
         let sftpHandle = try SFTPHandle(
             cSession: cSession,
             sftpSession: sftpSession,
@@ -163,6 +164,21 @@ public class SFTP {
         
         var offset = 0
         while offset < data.count {
+
+            // Format bytes.
+            let byteFormatter = ByteCountFormatter()
+            byteFormatter.allowedUnits = [.useMB]
+            byteFormatter.countStyle = .file
+
+            DispatchQueue.main.async {
+                // Update progress percentage.
+                progress.progress = Double(offset / data.count * 100)
+
+                // Update progress string.
+                progress.text = byteFormatter.string(fromByteCount: Int64(data.count))
+            }
+
+            // Write data.
             let upTo = Swift.min(offset + SFTPHandle.bufferSize, data.count)
             let subdata = data.subdata(in: offset ..< upTo)
             if subdata.count > 0 {

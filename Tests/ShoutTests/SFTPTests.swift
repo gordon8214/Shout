@@ -35,7 +35,7 @@ class SFTPTests: XCTestCase {
         try SSH.connect(host: ShoutServer.host, username: ShoutServer.username, authMethod: ShoutServer.authMethod) { (ssh) in
             let sftp = try ssh.openSftp()
             
-            try sftp.upload(localURL: URL(fileURLWithPath: String(#file)), remotePath: "/tmp/shout_upload_test.swift")
+            try sftp.upload(localURL: URL(fileURLWithPath: String(#file)), remotePath: "/tmp/shout_upload_test.swift", progress: UploadProgress())
             
             let (status, contents) = try ssh.capture("cat /tmp/shout_upload_test.swift")
             XCTAssertEqual(status, 0)
